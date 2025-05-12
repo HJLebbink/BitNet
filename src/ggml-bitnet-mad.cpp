@@ -228,25 +228,79 @@ namespace {
     __attribute__((target("avx512vnni")))
     inline float ggml_vec_dot_i2_i8_s_avx512_vnni(int n, const uint8_t* x, const int8_t* y) {
         const int number_of_blocks = n / 128;
-
         const __m512i mask = _mm512_set1_epi8(0x03);
-        __m512i accu_1 = _mm512_setzero_si512();
-        __m512i accu_2 = _mm512_setzero_si512();
 
-        for (int j = 0; j < number_of_blocks; ++j) {
-            const __m256i xq = _mm256_loadu_si256((const __m256i*)(x + (j * 32)));
-            const __m512i xqa = _mm512_inserti64x4(_mm512_castsi256_si512(_mm256_srli_epi16(xq, 2)), xq, 1);
+        if (true) {
+            const __m512i bit_23 = _mm512_set1_epi64(create_mask({ -1, -1, -1, -1, -1, -1, 3, 2 })); // Extract bits 2-3
+            const __m512i bit_45 = _mm512_set1_epi64(create_mask({ -1, -1, -1, -1, -1, -1, 5, 4 })); // Extract bits 4-5
+            const __m512i bit_67 = _mm512_set1_epi64(create_mask({ -1, -1, -1, -1, -1, -1, 7, 6 })); // Extract bits 6-7
 
-            const __m512i x0 = _mm512_and_si512(_mm512_srli_epi16(xqa, 4), mask);
-            const __m512i x2 = _mm512_and_si512(xqa, mask);
+            __m512i accu_0 = _mm512_setzero_si512();
+            __m512i accu_1 = _mm512_setzero_si512();
+            __m512i accu_2 = _mm512_setzero_si512();
+            __m512i accu_3 = _mm512_setzero_si512();
 
-            const __m512i y0 = _mm512_loadu_si512((const __m512i*)(y + j * 128 + (0 * 64)));
-            const __m512i y2 = _mm512_loadu_si512((const __m512i*)(y + j * 128 + (1 * 64)));
+            int j = 0;
+            for (; j < number_of_blocks; j += 2) {
+                const __m512i xq = _mm512_loadu_si512((const __m512i*)(x + (j * 32)));
 
-            accu_1 = _mm512_dpbusd_epi32(accu_1, x0, y0);
-            accu_2 = _mm512_dpbusd_epi32(accu_2, x2, y2);
+                const __m512i z0 = _mm512_and_si512(xq, mask);
+                const __m512i z2 = _mm512_gf2p8affine_epi64_epi8(xq, bit_23, 0);
+                const __m512i z4 = _mm512_gf2p8affine_epi64_epi8(xq, bit_45, 0);
+                const __m512i z6 = _mm512_gf2p8affine_epi64_epi8(xq, bit_67, 0);
+
+                const __m512i x1 = _mm512_shuffle_i64x2(z2, z0, 0b01'00'01'00);
+                const __m512i x3 = _mm512_shuffle_i64x2(z2, z0, 0b11'10'11'10);
+                const __m512i x0 = _mm512_shuffle_i64x2(z6, z4, 0b01'00'01'00);
+                const __m512i x2 = _mm512_shuffle_i64x2(z6, z4, 0b11'10'11'10);
+
+                const __m512i y0 = _mm512_loadu_si512((const __m512i*)(y + j * 128 + (0 * 64)));
+                const __m512i y1 = _mm512_loadu_si512((const __m512i*)(y + j * 128 + (1 * 64)));
+                const __m512i y2 = _mm512_loadu_si512((const __m512i*)(y + j * 128 + (2 * 64)));
+                const __m512i y3 = _mm512_loadu_si512((const __m512i*)(y + j * 128 + (3 * 64)));
+
+                accu_0 = _mm512_dpbusd_epi32(accu_0, x0, y0);
+                accu_1 = _mm512_dpbusd_epi32(accu_1, x1, y1);
+                accu_2 = _mm512_dpbusd_epi32(accu_2, x2, y2);
+                accu_3 = _mm512_dpbusd_epi32(accu_3, x3, y3);
+            }
+            accu_0 = _mm512_add_epi32(accu_0, accu_2);
+            accu_1 = _mm512_add_epi32(accu_1, accu_3);
+
+            if (j < number_of_blocks) {
+                const __m256i xq = _mm256_loadu_si256((const __m256i*)(x + (j * 32)));
+                const __m512i xqa = _mm512_inserti64x4(_mm512_castsi256_si512(_mm256_srli_epi32(xq, 2)), xq, 1);
+
+                const __m512i x0 = _mm512_and_si512(_mm512_srli_epi32(xqa, 4), mask);
+                const __m512i x1 = _mm512_and_si512(xqa, mask);
+
+                const __m512i y0 = _mm512_loadu_si512((const __m512i*)(y + j * 128 + (0 * 64)));
+                const __m512i y1 = _mm512_loadu_si512((const __m512i*)(y + j * 128 + (1 * 64)));
+
+                accu_0 = _mm512_dpbusd_epi32(accu_1, x0, y0);
+                accu_1 = _mm512_dpbusd_epi32(accu_2, x1, y1);
+            }
+            return static_cast<float>(hsum_i32_16(_mm512_add_epi32(accu_0, accu_1)));
         }
-        return static_cast<float>(hsum_i32_16(_mm512_add_epi32(accu_1, accu_2)));
+        else {
+            __m512i accu_0 = _mm512_setzero_si512();
+            __m512i accu_1 = _mm512_setzero_si512();
+
+            for (int j = 0; j < number_of_blocks; ++j) {
+                const __m256i xq = _mm256_loadu_si256((const __m256i*)(x + (j * 32)));
+                const __m512i xqa = _mm512_inserti64x4(_mm512_castsi256_si512(_mm256_srli_epi16(xq, 2)), xq, 1);
+
+                const __m512i x0 = _mm512_and_si512(_mm512_srli_epi32(xqa, 4), mask);
+                const __m512i x1 = _mm512_and_si512(xqa, mask);
+
+                const __m512i y0 = _mm512_loadu_si512((const __m512i*)(y + j * 128 + (0 * 64)));
+                const __m512i y1 = _mm512_loadu_si512((const __m512i*)(y + j * 128 + (1 * 64)));
+
+                accu_0 = _mm512_dpbusd_epi32(accu_0, x0, y0);
+                accu_1 = _mm512_dpbusd_epi32(accu_1, x1, y1);
+            }
+            return static_cast<float>(hsum_i32_16(_mm512_add_epi32(accu_0, accu_1)));
+        }
     }
 #endif
 
